@@ -1,0 +1,90 @@
+
+
+\documentclass{sig-alternate-05-2015}
+
+% Include useful packages
+\usepackage{graphicx}
+\graphicspath{ {images/} }
+\usepackage{float}
+
+
+\begin{document}
+
+% Copyright
+\setcopyright{acmcopyright}
+
+
+\title{Approaches to Incorporating Whole Genome Information in the context of Mining Genetic Data}
+
+\author{
+% You can go ahead and credit any number of authors here,
+% e.g. one 'row of three' or two rows (consisting of one row of three
+% and a second row of one, two or three).
+%
+% The command \alignauthor (no curly braces needed) should
+% precede each author name, affiliation/snail-mail address and
+% e-mail address. Additionally, tag each line of
+% affiliation/address with \affaddr, and tag the
+% e-mail address with \email.
+%
+% 1st. author
+Siddharth Avadhanam\\
+       \email{avadhana@msu.edu}
+}
+% There's nothing stopping you putting the seventh, eighth, etc.
+% author on the opening page (as the 'third row') but we ask,
+% for aesthetic reasons that you place these 'additional authors'
+% in the \additional authors block, viz.
+\date{\today}
+% Just remember to make sure that the TOTAL number of authors
+% is the number that will appear on the first page PLUS the
+% number that will appear in the \additionalauthors section.
+
+\maketitle
+
+
+
+\section{Problem Description}
+In this work I propose to evaluate classical whole genome regression approaches in the statistical genetics literature such as lasso and
+ridge-regression against newer ensemble methods that are being applied to data from Genome Wide Association Studies.
+I will follow this review paper by Scyzymczak et al. \cite{Szymczak_machine_2009} and implement some of the more succesful approaches in a wheat data set.
+I will evaluate these procedures in terms of cross validation accuracy, statistical considerations and computational performance.
+
+The high-dimensionality and complexity of data coming in from Genome Wide Association Studies
+poses a whole range of statistical and computational challenges in finding genetic covariates of important phenotypes
+( disease, yield , height etc). These data commonly contain thousands of individuals with information on
+hundreds of thousands of markers. \cite{zhang_chapter_2012} An important issue which has been given considerable attention in the statistical genetics
+literature is how to choose a subset of these markers so that the analysis of these data with standard commodity hardware and statistical methods
+becomes more tractable.\cite{de_los_campos_whole-genome_2013} Methods which analyze a single-marker at a time are popular, but are severly limited in that they do not take into account
+interactions between markers, and come with their own set of challenges related to multiple testing.\cite{moskvina_multiple-testing_2008}
+It is thus becoming increasingly important to explore methods that incorporate information form the whole genome and possibly from outside the domain of traditional statistics.
+In this work I will take a first step in evaluating the popular approaches towards whole genome regression, and contrast it with newer ensemble methods
+and possibly ( if time permits ) deep learning approaches. I will evaluate these methods on a publicly available dataset for wheat, looking
+at statistical considerations such as robustness, cross-validation accuracy of prediction, and computational feasibility.
+
+\section{Related Work}
+
+There is considerable literature in statistical learning approaches towards the analysis of GWAS data. Earlier work has
+touched upon single marker regression methods and the whole host of approaches that can be applied to
+deal with the multiple-testing issues. Penalized regression methods such as ridge regression,\cite{austin_penalized_2013}
+variable selection methods such as the lasso  and dimensionality reducing approaches such as principal components \cite{price_principal_2006} have all been applied and studied extensively in the analysis of
+genome-wide data. Bayesian methods and mixed models approaches within specific communities such as animal breeding have been
+studied and applied for a long time, and are increasingly being used with genome-wide data. \cite{de_los_campos_whole-genome_2013}
+The discovery of gene-gene interactions is an active area of research where machine learning tools are being extensively employed \cite{upstill-goddard_machine_2013}
+
+\section{Project Milestones}
+This section will detail milestones so that I can roughly organize my work
+toward the completion of this project.
+\begin{itemize}
+\item Prepare a proposal and survey important literature
+\item Dig deeper into the literature and search for implementational details
+\item Clean, organize and explore the data. Include or remove clinical covariates as necessary.
+\item Prepare the code, run and test it extensively on example data. Decide if simulations will be necessary.
+\item Prepare a second draft with a detailed introduction and some results based on exploration.
+\item Run the alogrithms on the wheat data set, and collect the results. Prepare summaries and visualizations.
+\item Prepare Final Report
+\end{itemize}
+
+\bibliography{cse_847}
+\bibliographystyle{unsrt}
+\end{document}
