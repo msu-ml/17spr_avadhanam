@@ -1,0 +1,325 @@
+---
+title: "CSE_847 Project"
+author: "Siddharth Avadhanam"
+date: "24 April 2017"
+output: html_document
+---
+First we import the example dataset that comes with BGLR. 
+
+```{r}
+library(BGLR)
+data(mice)
+```
+
+We center and scale the data and compute the tcrossprod to get the G matrix ( kernel ) and then divide it by the mean of the diagonal values to scale it to an average diagonal value of 1. 
+
+The marker matrix has been preprocessed and Quality controlled. SNPs with minor allele frequency less than 0.05 have been removed ( monomorphic ), have been tested for Hardy Weingberg Equilibrium. 
+
+The phenotype matrix contains data on obesity. Our primary outcome of interest will be bmi, which we try to predict. Cage Density, Litter size, and sex are also important covariate to control for. 
+
+```{r}
+X_s <- scale(mice.X,center=TRUE,scale=TRUE)
+G <- tcrossprod(X_s)
+G <- G/(mean(diag(G)))
+```
+
+
+# MODEL FITTING 
+
+This section is carried out in three stages. We will look at kernel-based mixed model regression approaches to incorporating genetic information into prediction. This is done by computing the Genetic Relationship Matrix (which is essentially a kernel function of the data ) and modelling the resulting Kernel as correlations between the levels of a random effect. This will be done in a bayesian framework using the package BGLR. 
+
+We will compare and contrast this with variable selection methods applied to genetic data, which will make use of shrinkage and selection methods to select a subset of optimal markers for prediction. We will approach this using bayesian methods, which offer unqiue flexibility in incorporating simultaneous shrinkage and selection through the use of appropriate prior densities. We will also look at frequentist methods for dealing with variable shrinkage and selection in the high-dimensional problems, and here we will primarily focus on the elastic net. 
+
+We will also look at the simplest approach towards dealing with high-dimensional genetic marker data, which is single-marker regressions with FDR correction, and discuss what its limitations are , and why we might want to explore more sophisticated models. 
+
+# MAIN BGLR MODELS:
+
+## KERNEL MODEL 1 
+For our first model, we will compute a guassian kernel form the marker matrix, and fit a Gaussian process model in the package BGLR. Specifically, this will be an RKHS model. 
+
+```{r}
+Y <- mice.pheno
+
+bmi <- mice.pheno$Obesity.BMI;
+bmi <- scale(bmi,center=TRUE,scale=TRUE)
+
+#Linear Predictor 
+
+ETA<-list(  FIXED=list(~factor(GENDER)+factor(Litter),                   
+                   data=Y,model="FIXED"),
+             CAGE=list(~factor(cage),data=Y, model="BRR"),
+             MRK=list(K=G , model="RKHS")
+        )
+
+fm <-BGLR(y=bmi,ETA=ETA,response_type = "gaussian" )
+
+# correlation
+
+cor(bmi,fm$yHat)  #0.784
+#Getting the predictions  
+
+yHat <-fm$yHat
+
+#Plotting the predictions
+yHat<-fm$yHat 
+tmp<-range(c(bmi,yHat)) 
+plot(yHat~bmi,xlab="Observed",ylab="Predicted",col=2, 
+            xlim=tmp,ylim=tmp); abline(a=0,b=1,col=4,lwd=2) 
+
+fm$fit    # 371 pD, 4323 DIC
+fm$varE   # 0.516 is the unexplained or error variance.
+var(bmi)
+
+
+
+#TRACE PLOTS 
+varE <- scan("varE.dat")
+plot(varE,type="o",col=2,cex=.5); #Show good mixing as the sampled value at any iteration is unrelated to any other
+
+varU <- scan("ETA_MRK_varU.dat")
+plot(varU,type="o",col=2,cex=.5)
+
+h2 <- varU/(varE+varU)
+plot(h2,type="o",col=2,cex=.5)
+
+mean(h2) # estimate is 0.18 
+
+########################## CROSS-VAL #################################
+yNA<-bmi 
+samp_vec <- c(1:1814)
+tst <-sample(samp_vec,size=350,replace=FALSE) 
+yNA[tst]<-NA 
+
+t1 <- proc.time()
+ETA$MRK$model<-"RKHS" 
+fmRK<-BGLR(y=yNA,ETA=ETA, nIter=nIter, burnIn=burnIn,saveAt="RK_") 
+RK_time <- proc.time - t1
+
+RK_corr <- cor(fmRK$yHat[tst],bmi[tst])    #TST 
+RK_corr_train <- cor(fmRK$yHat[-tst],bmi[-tst])  #TRN 
+
+
+```
+
+We see the that the RKHS model incorporates genetic information pretty well and gets us a prediction accuracy of 78% ( compare with the SMR model) We get nice mixing with the Error variance, and a heritability estimate of about 18%. Inference is pretty robust, 51% of the variance in the phenotype is left unexplained by our model. 
+
+## BAYESIAN SHRINKAGE/SELECTION MODELS.
+
+We look at estimation using BRR, BL, BayesA(scaled-t prior )and BayesB ( point mass at zero + scaled t slab)
+
+```{r}
+X=scale(mice.X,scale=TRUE,center=TRUE) 
+
+nIter<-4500; burnIn<-500 
+
+## Bayesian Ridge Regression (Gaussian prior), equivalent to G-BLUP 
+ ETA<-list(FIXED=list(~factor(GENDER)+factor(Litter),                   
+                   data=Y,model="FIXED"),
+             CAGE=list(~factor(cage),data=Y, model="BRR"),
+           MRK=list(X=X,model="BRR")
+           ) 
+ fmBRR<-BGLR(y=bmi,ETA=ETA, nIter=nIter, burnIn=burnIn,saveAt="BRR_") 
+ 
+ #Estimated marker effect
+   bHat<- fmBRR$ETA$MRK$b 
+  SD.bHat<- fmBRR$ETA$MRK$SD.b 
+  plot(bHat^2, ylab="Estimated Squared-Marker Effect",  
+        type="o",cex=.5,col="red",main="Marker Effects", 
+        xlab="Marker") 
+  points(bHat^2,cex=0.5,col="blue")
+  
+  # Predictions   
+  gHat<-X%*%fmBRR$ETA$MRK$b 
+    plot(fmBRR$y~gHat,ylab="Phenotype", 
+         xlab="Predicted Genomic Value", col=2, cex=0.5,  
+         main="Predicted Genomic Values Vs Phenotypes", 
+         xlim=range(gHat),ylim=range(fmBRR$y));  
+    
+
+#Plotting the predictions
+yHat<-fmBRR$yHat 
+tmp<-range(c(bmi,yHat)) 
+plot(yHat~bmi,xlab="Observed",ylab="Predicted",col=2, 
+            xlim=tmp,ylim=tmp); abline(a=0,b=1,col=4,lwd=2) 
+
+# correlation between the prediction and observed
+cor(bmi,yHat)    # 0.787
+
+#fit statistics and varE
+
+  fmBRR$fit    # DIC = 4332.247, pD = 382.7973
+   fmBRR$varE #0.51739 
+   
+########################## CROSS-VAL #################################
+yNA<-bmi 
+samp_vec <- c(1:1814)
+tst <-sample(samp_vec,size=350,replace=FALSE) 
+yNA[tst]<-NA 
+
+t1 <- proc.time()
+ETA$MRK$model<-"BRR" 
+fmBRR<-BGLR(y=yNA,ETA=ETA, nIter=nIter, burnIn=burnIn,saveAt="BRR_") 
+BRR_time <- proc.time() - t1
+
+BRR_corr <- cor(fmBRR$yHat[tst],bmi[tst])    #TST 
+BRR_corr_train <- cor(fmBRR$yHat[-tst],bmi[-tst])  #TRN 
+   
+```
+    
+RKHS model fits better and surprisingly, RKHS methods fares just as well when it comes to prediction, variance explaned, and correlation with prediction. The plots of the correlation between pred and actual are also strikingly similar. We will now compare other variable shrinkage and selection methods and plot the difference on the same marker effects graph. We will also see if we can get better performance with more Bayesian approach of simultaneous shrinkage and selection using appropriate priors. If our purpose is not to select significant SNPs, kernel would be the way to go incorporating genomic information in prediction. It is however, not so straightfoward to assess the heritability or the amount of variation in the phenotype explained by genetics. It is easier in the Kernel Model with random effects variace estimates. 
+
+Next we look at the Bayesian Lasso and BayesA, which use a Double exponential prior and Scaled-t prior respectively. These methods are notably different from frequentist approaches in that they allow us to incorporate size-of-effect dependent variable shrinkage.
+
+
+```{r}
+   
+## BL
+  ETA$MRK$model<-"BL" 
+ fmBL<-BGLR(y=bmi,ETA=ETA, nIter=nIter, burnIn=burnIn,saveAt="BL_") 
+
+ #fit
+ BL_fit <- fmBL$fit    # DIC = 4335.898, pD = 358.9491
+   BL_varE <- fmBL$varE #0.526
+   
+#Plotting the predictions
+yHat<-fmBL$yHat 
+tmp<-range(c(bmi,yHat)) 
+plot(yHat~bmi,xlab="Observed",ylab="Predicted",col=2, 
+            xlim=tmp,ylim=tmp); abline(a=0,b=1,col=4,lwd=2) 
+
+# correlation between the prediction and observed
+cor(bmi,yHat)    # 0.7786
+
+
+
+########################## CROSS-VAL #################################
+yNA<-bmi 
+samp_vec <- c(1:1814)
+tst <-sample(samp_vec,size=350,replace=FALSE) 
+yNA[tst]<-NA 
+
+t1 <- proc.time()
+ETA$MRK$model<-"BL" 
+fmBL<-BGLR(y=yNA,ETA=ETA, nIter=nIter, burnIn=burnIn,saveAt="BL_") 
+BL_time <- proc.time() - t1
+
+BL_corr <- cor(fmBAL$yHat[tst],bmi[tst])    #TST 
+BL_corr_train <- cor(fmBL$yHat[-tst],bmi[-tst])  #TRN 
+```
+
+It would seem that the Bayes Lasso is a pretty good approach, and is the only approach that can compete with the BayesB, despite not incorporating variable shrinkage. 
+```{r}
+## Bayes A(Scaled-t prior) 
+
+ETA$MRK$model<-"BayesA" 
+fmBA<-BGLR(y=bmi,ETA=ETA, nIter=nIter, burnIn=burnIn,saveAt="BA_") 
+ 
+ #fit
+  fmBA$fit    # DIC = 4329.818, pD = 392.8773
+   fmBA$varE #0.514
+   
+#Plotting the predictions
+yHat<-fmBA$yHat 
+tmp<-range(c(bmi,yHat)) 
+plot(yHat~bmi,xlab="Observed",ylab="Predicted",col=2, 
+            xlim=tmp,ylim=tmp); abline(a=0,b=1,col=4,lwd=2)    
+
+# correlation between the prediction and observed
+cor(bmi,yHat)    # 0.790
+
+
+########################## CROSS-VAL #################################
+yNA<-bmi 
+samp_vec <- c(1:1814)
+tst <-sample(samp_vec,size=350,replace=FALSE) 
+yNA[tst]<-NA 
+
+t1 <- proc.time()
+ETA$MRK$model<-"BayesA" 
+fmBA<-BGLR(y=yNA,ETA=ETA, nIter=nIter, burnIn=burnIn,saveAt="BA_") 
+BA_time <- proc.time() - t1
+
+BA_corr <- cor(fmBA$yHat[tst],bmi[tst])    #TST 
+BA_corr_train <- cor(fmBA$yHat[-tst],bmi[-tst])  #TRN 
+
+```
+
+The next two methods are selection methods. BayesB method uses a mixture of a point mass at zero and a scaled-t slab which allows for variable selection as there is a non-zero probability that the effect will be assigned a zero value. This method is somewhat confusingly, close to the lasso than the Bayes Lasso method, and we can look at how many features it selects compared to the Elastic Net approach.  The Elastic Net is the only non-Bayesian approach we consider here, 
+
+```{r}
+## Bayes B (point of mass at zero + scaled-t slab) 
+ ETA$MRK$model<-"BayesB" 
+ fmBB<-BGLR(y=bmi,ETA=ETA, nIter=nIter, burnIn=burnIn,saveAt="BB_") 
+
+#fit
+BBfit <- fmBB$fit    # DIC = 4327.8565, pD = 387.1727
+BBvarE <- fmBB$varE # 0.515
+   
+#Plotting the predictions
+yHat<-fmBB$yHat 
+tmp<-range(c(bmi,yHat)) 
+plot(yHat~bmi,xlab="Observed",ylab="Predicted",col=2, 
+            xlim=tmp,ylim=tmp); abline(a=0,b=1,col=4,lwd=2)    
+
+# correlation between the prediction and observed
+cor(bmi,yHat)    # 0.789
+ 
+#Number of non-zero features
+
+
+
+########################## CROSS-VAL #################################
+yNA<-bmi 
+samp_vec <- c(1:1814)
+tst <-sample(samp_vec,size=350,replace=FALSE) 
+yNA[tst]<-NA 
+
+t1 <- proc.time()
+ETA$MRK$model<-"BayesB" 
+fmBB<-BGLR(y=yNA,ETA=ETA, nIter=nIter, burnIn=burnIn,saveAt="BB_") 
+BB_time <- proc.time() - t1
+
+BB_corr <- cor(fmBB$yHat[tst],bmi[tst])    #TST 
+BB_corr_train <- cor(fmBB$yHat[-tst],bmi[-tst])  #TRN 
+
+```
+
+It appears BayesB performs considerably better in a cross-validation analysis of the data, which corroborates our results with elastic net. It seems incorporating a prior that allows selection is a better general model.
+
+
+```{r}
+#ELASTIC NET WITH CROSS VALIDATION
+x <- model.matrix(~GENDER+Litter+cage,data=mice.pheno)
+x <- cbind(x,X)
+
+
+samp_vec <- c(1:1814)
+tst <-sample(samp_vec,size=300,replace=FALSE) 
+
+alpha.grid <- seq(0,1,length=10)
+i=1
+fmEN <- list()
+
+for (a in alpha.grid){
+fmEN[[i]] <- cv.glmnet(x[-tst,],y=bmi[-tst],alpha=a,family="gaussian")
+        i = i+1
+        print(i)
+}
+
+#Getting predictions and assessing performance
+pred <- vector()
+corr <- vector()
+
+for (i in 1:10){
+pred <- predict(fmEN[[i]],newx = x[tst,],s="lambda.min")
+corr[i] <- cor(pred,bmi[tst])
+}
+
+lmin <- fmEN[[10]]$lambda.min
+Deviance fit = #0.4994 
+```
+
+These results are interesting. The Elastic Net method performance best with around 0.5-0.6 mixing parameter, and in the limit that it approaches the lasso method. It appears that some amount of selection is necessary for optimal prediction from marker data. In constrast, the Bayesian paradigm allows us to incorporate size of effect dependent shrinkage, and performs well without requiring selection methods. 
+
+## PUTTING THE RESULTS TOGETHER
+

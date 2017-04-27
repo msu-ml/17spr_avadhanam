@@ -1,0 +1,84 @@
+---
+title: "simulation_study"
+author: "Siddharth Avadhanam"
+date: "25 April 2017"
+output: html_document
+---
+
+Here we conduct a simulation with 3 different genetic archituectures, and compare the RKHS, BL/BayesB, and Elastic Net approaches to see which approach is better. 
+
+```{r}
+ rm(list=ls()) 
+  library(BGLR);  data(mice);  
+  n<-nrow(mice.X); p<-ncol(mice.X);  
+  X=scale(mice.X,scale=TRUE,center=TRUE) 
+ Y <- mice.pheno
+ 
+G <- tcrossprod(X)
+G <- G/(mean(diag(G)))
+  
+  
+  
+nQTL <- 100
+
+  p<-ncol(X); n<-nrow(X); h2<-0.5 
+  whichQTL<-seq(from=floor(p/nQTL/2),by=floor(p/nQTL),length=nQTL) 
+  b0<-rep(0,p) 
+  b0[whichQTL]<-rnorm(n=nQTL,sd=sqrt(h2/nQTL)) 
+  signal<-as.vector(X%*%b0) 
+  error<-rnorm(n,sd=sqrt(1-h2)) 
+  y<-signal+error 
+  
+
+yNA<-y 
+samp_vec <- c(1:1814)
+tst <-sample(samp_vec,size=350,replace=FALSE) 
+yNA[tst]<-NA
+
+ETA<-list(  FIXED=list(~factor(GENDER)+factor(Litter),                   
+                   data=Y,model="FIXED"),
+             CAGE=list(~factor(cage),data=Y, model="BRR"),
+             MRK=list(K=G , model="RKHS")
+       )
+fmRK <-BGLR(y=yNA,ETA=ETA,response_type = "gaussian" )
+RK_corr_sim4 <- cor(fmRK$yHat[tst],y[tst])    #TST 
+
+nIter<-4500; burnIn<-500 
+
+ETA<-list(FIXED=list(~factor(GENDER)+factor(Litter),                   
+                   data=Y,model="FIXED"),
+             CAGE=list(~factor(cage),data=Y, model="BRR"),
+           MRK=list(X=X,model="BL")
+           ) 
+fmBL<-BGLR(y=yNA,ETA=ETA, nIter=nIter, burnIn=burnIn,saveAt="BLsim_") 
+BL_corr_sim4 <- cor(fmBL$yHat[tst],y[tst])    #TST 
+
+ 
+ETA$MRK$model<-"BayesB" 
+fmBB<-BGLR(y=yNA,ETA=ETA, nIter=nIter, burnIn=burnIn,saveAt="BBsim_") 
+BB_corr_sim4 <- cor(fmBB$yHat[tst],y[tst])    #TST 
+
+
+ETA$MRK$model<-"BRR" 
+fmBRR<-BGLR(y=yNA,ETA=ETA, nIter=nIter, burnIn=burnIn,saveAt="BRR_") 
+BRR_corr_sim4 <- cor(fmBRR$yHat[tst],y[tst])    #TST 
+
+
+
+
+  tmp<-range(abs(b0)) 
+  plot(numeric()~numeric(),ylim=tmp,xlim=c(1,p), 
+       ylab=expression(paste("|",beta[j],"|")), 
+	       xlab="Marker Possition (order)") 
+  abline(v=whichQTL,lty=2,col=4) 
+  points(x=whichQTL,y=abs(b0[whichQTL]),pch=19,col=4) 
+  points(x=1:p,y=abs(fmBL$ETA$MRK$b),col='black',cex=.5) 
+  lines(x=1:p,y=abs(fmBL$ETA$MRK$b),col='black',cex=.5)     
+  points(x=1:p,y=abs(fmBB$ETA$MRK$b),col='red',cex=.5) 
+  lines(x=1:p,y=abs(fmBB$ETA$MRK$b),col='red',cex=.5)  
+
+  points(x=1:p,y=abs(fmBRR$ETA$MRK$b),col='green',cex=.5) 
+  lines(x=1:p,y=abs(fmBRR$ETA$MRK$b),col='green',cex=.5)  
+
+```
+
